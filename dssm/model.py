@@ -291,6 +291,6 @@ class DSSM(nn.Module):
             self.in_features = None
         if os.path.exists(self.vocabulary_path):
             self._load_vocab()
-        self.build()
+            self.build()
         if os.path.exists(self.model_path):
             self.load_state_dict(torch.load(self.model_path, map_location=self.device))
