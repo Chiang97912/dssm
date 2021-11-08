@@ -5,11 +5,11 @@ An industrial-grade implementation of the paper: [Learning Deep Structured Seman
 Latent semantic models, such as LSA, intend to map a query to its relevant documents at the semantic level where keyword-based matching often fails. DSSM project queries and documents into a common low-dimensional space where the relevance of a document given a query is readily computed as the distance between them.
 
 This model can be used as a search engine that helps people find out their desired document even with searching a query that:
-2. is abbreviation of the document words;
-3. changed the order of the words in the document;
-4. shortened words in the document;
-5. has typos;
-6. has spacing issues.
+1. is abbreviation of the document words;
+2. changed the order of the words in the document;
+3. shortened words in the document;
+4. has typos;
+5. has spacing issues.
 
 
 
@@ -43,7 +43,7 @@ python setup.py install
 from dssm.model import DSSM
 
 queries = ['...']  # query list, words need to be segmented in advance, and tokens should be spliced with spaces.
-documents = ['...'] # document list, words need to be segmented in advance, and tokens should be spliced with spaces.
+documents = ['...']  # document list, words need to be segmented in advance, and tokens should be spliced with spaces.
 model = DSSM('dssm-model', device='cuda:0', lang='en')
 model.fit(queries, documents)
 ```
