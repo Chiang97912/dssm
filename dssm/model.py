@@ -54,6 +54,9 @@ class DSSM(nn.Module):
                  mlp_num_units=300,
                  mlp_num_fan_out=128,
                  mlp_activation_func='tanh',
+                 vocab_ngram_range=(1, 1),
+                 vocab_analyzer='char_wb',
+                 vocab_binary=False,
                  **kwargs):
         """Deep Structured Semantic Models
 
@@ -69,6 +72,9 @@ class DSSM(nn.Module):
             mlp_num_units {number} -- mlp hidden size (default: {300})
             mlp_num_fan_out {number} -- mlp output size (default: {128})
             mlp_activation_func {str} -- mlp activation function (default: {'tanh'})
+            vocab_ngram_range {tuple} -- vocabulary ngram range (default: {(1,1)})
+            vocab_analyzer {str} -- vocabulary analyzer (default: {'char_wb'})
+            vocab_binary {str} -- If True, all non zero counts are set to 1. (default: {False})
         """
         super(DSSM, self).__init__()
         self.model_name_or_path = model_name_or_path
@@ -80,6 +86,9 @@ class DSSM(nn.Module):
         self.mlp_num_units = mlp_num_units
         self.mlp_num_fan_out = mlp_num_fan_out
         self.mlp_activation_func = mlp_activation_func
+        self.vocab_ngram_range = vocab_ngram_range
+        self.vocab_analyzer = vocab_analyzer
+        self.vocab_binary = vocab_binary
         self.__dict__.update(kwargs)
 
         if not model_name_or_path:
@@ -88,12 +97,6 @@ class DSSM(nn.Module):
         self.model_path = os.path.join(self.model_name_or_path, 'pytorch_model.bin')
         self.vocabulary_path = os.path.join(self.model_name_or_path, 'vocabulary.bin')
         self.config_path = os.path.join(self.model_name_or_path, 'config.json')
-
-        config = {}
-        for key, value in self.__dict__.items():
-            if key.startswith('vocab_'):
-                config[key.strip('vocab_')] = value
-        self.vectorizer = Vectorizer(lang=self.lang, **config)
         self.load()
 
     def make_perceptron_layer(self, in_f, out_f, activation=None, dropout=None, batch_norm=False):
@@ -257,9 +260,9 @@ class DSSM(nn.Module):
         return vectors
 
     def _save_config(self):
-        config = {}
+        config = {'lang': self.lang}
         for key, value in self.__dict__.items():
-            if key.startswith('mlp') or key.startswith('vocab'):
+            if key.startswith('mlp') or key.startswith('vocab_'):
                 config[key] = value
         os.makedirs(self.model_name_or_path, exist_ok=True)
         with open(self.config_path, 'w', encoding='utf-8') as f:
@@ -289,6 +292,13 @@ class DSSM(nn.Module):
             self._load_config()
         else:
             self.in_features = None
+
+        config = {}
+        for key, value in self.__dict__.items():
+            if key.startswith('vocab_'):
+                config[key.replace('vocab_', '')] = value
+        self.vectorizer = Vectorizer(**config)
+
         if os.path.exists(self.vocabulary_path):
             self._load_vocab()
             self.build()
