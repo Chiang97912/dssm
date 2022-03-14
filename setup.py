@@ -8,7 +8,7 @@ with open("README.md", "r") as fd:
 
 setuptools.setup(
     name="dssm",
-    version="0.1.2",
+    version="0.1.3",
     description="An industrial-grade implementation of DSSM",
     long_description=long_description,
     long_description_content_type="text/markdown",

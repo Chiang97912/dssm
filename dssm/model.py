@@ -46,7 +46,6 @@ activation_dict = nn.ModuleDict([
 class DSSM(nn.Module):
     def __init__(self,
                  model_name_or_path=None,
-                 lr=0.0001,
                  gamma=None,
                  device='cpu',
                  lang='en',
@@ -64,7 +63,6 @@ class DSSM(nn.Module):
 
         Keyword Arguments:
             model_name_or_path {str} -- the path of model (default: {None})
-            lr {number} -- learning rate (default: {0.0001})
             gamma {number} -- smoothing factor (default: {None})
             device {str} -- device (default: {'cpu'})
             lang {str} -- language (default: {'en'})
@@ -78,7 +76,6 @@ class DSSM(nn.Module):
         """
         super(DSSM, self).__init__()
         self.model_name_or_path = model_name_or_path
-        self.lr = lr
         self.gamma = gamma
         self.device = device
         self.lang = lang
@@ -139,15 +136,12 @@ class DSSM(nn.Module):
 
         self.learn_gamma = self.make_perceptron_layer(1, 1)
 
-        # self.optimizer = optim.SGD(self.parameters(), lr=self.lr, momentum=0.5)
-        self.optimizer = optim.Adam(self.parameters(), lr=self.lr)
-        self.scheduler = lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.1)
         self.to(self.device)
 
     def criterion(self, softmax_qp):
         # loss = -torch.log(torch.prod(softmax_qp))
-        loss = -torch.sum(torch.log(softmax_qp))
-        # loss = -torch.mean(torch.log(softmax_qp))
+        # loss = -torch.sum(torch.log(softmax_qp))
+        loss = -torch.mean(torch.log(softmax_qp))
         return loss
 
     def forward(self, q, p, ns, norm=False):
@@ -175,7 +169,24 @@ class DSSM(nn.Module):
         softmax_qp = F.softmax(cos_uni, dim=1)[:, 0]  # size: (batch_size)
         return softmax_qp
 
-    def fit(self, queries, documents, epochs=20, batch_size=32, num_neg=4):
+    def fit(self, queries, documents, lr=0.0001, epochs=20, batch_size=32, num_neg=4, train_size=0.8, weight_decay=0, lr_decay=1):
+        """
+
+        Train the model with query-document pairs.
+
+        Arguments:
+            queries {list} -- Query list
+            documents {list} -- Document list
+
+        Keyword Arguments:
+            lr {number} -- Learning rate (default: {0.0001})
+            epochs {number} -- Number of epochs for training (default: {20})
+            batch_size {number} -- Batch size (default: {32})
+            num_neg {number} -- Number of negative samples (default: {4})
+            train_size {number} -- Training dataset ratio (default: {0.8})
+            weight_decay {number} -- Weight decay for optimizer(L2 Regularization) (default: {0})
+            lr_decay {number} -- Multiplicative factor of learning rate decay (default: {1})
+        """
 
         self.vectorizer.fit(queries + documents)
         self.save()
@@ -193,7 +204,7 @@ class DSSM(nn.Module):
             doc_ns.append(rand)
 
         total = len(query)
-        train_size = int(total * 0.8)
+        train_size = int(total * train_size)
         eval_size = total - train_size
         dataset = Dataset(query, doc_p, doc_ns)
         train_dataset, eval_dataset = random_split(
@@ -205,9 +216,18 @@ class DSSM(nn.Module):
         eval_iterator = DataLoader(eval_dataset, batch_size=batch_size, shuffle=True)
         batch_num = len(train_iterator)
         logging.info(self)
+        weight_p, bias_p = [], []
+        for name, p in self.named_parameters():
+            if 'bias' in name:
+                bias_p += [p]
+            else:
+                weight_p += [p]
+        optimizer = torch.optim.Adam([{'params': weight_p, 'weight_decay': weight_decay},
+                                      {'params': bias_p, 'weight_decay': 0}], lr=lr)
+        scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=lr_decay)
         for epoch in range(epochs):
             self.train()
-            # self.scheduler.step()
+            scheduler.step()
             batch_idx = 0
             train_loss = []
             for q, p, ns in train_iterator:
@@ -217,10 +237,10 @@ class DSSM(nn.Module):
 
                 softmax_qp = self.forward(q, p, ns)
                 loss = self.criterion(softmax_qp)
-                self.optimizer.zero_grad()
+                optimizer.zero_grad()
                 loss.backward()
-                self.optimizer.step()
-                lr = self.scheduler.get_lr()[0]
+                optimizer.step()
+                lr = scheduler.get_lr()[0]
                 loss = round(loss.data.item(), 5)
                 train_loss.append(loss)
                 logging.info(r'epoch: %s/%s, batch:%s/%s, lr: %s, loss: %s' %
@@ -236,7 +256,7 @@ class DSSM(nn.Module):
 
                 softmax_qp = self.forward(q, p, ns)
                 loss = self.criterion(softmax_qp)
-                loss = round(loss.data.item(), 5)
+                loss = loss.data.item()
                 eval_loss.append(loss)
             train_loss = round(np.average(train_loss), 5)
             eval_loss = round(np.average(eval_loss), 5)
@@ -253,7 +273,7 @@ class DSSM(nn.Module):
         self.eval()
         vectors = self.vectorizer.transform(texts).toarray()
         with torch.no_grad():
-            vectors = torch.FloatTensor(vectors)
+            vectors = torch.FloatTensor(vectors).to(self.device)
         vectors = self.mlp_left(vectors).tolist()
         if input_was_string:
             vectors = vectors[0]
@@ -293,7 +313,7 @@ class DSSM(nn.Module):
         else:
             self.in_features = None
 
-        config = {}
+        config = {'lang': self.lang}
         for key, value in self.__dict__.items():
             if key.startswith('vocab_'):
                 config[key.replace('vocab_', '')] = value
